@@ -9,8 +9,6 @@ import (
 	"github.com/apernet/quic-go"
 )
 
-const streamDatagramQueueLen = 32
-
 // stateTrackingStream is an implementation of quic.Stream that delegates
 // to an underlying stream
 // it takes care of proxying send and receive errors onto an implementation of
@@ -23,7 +21,7 @@ type stateTrackingStream struct {
 
 	sendDatagram func([]byte) error
 	hasData      chan struct{}
-	queue        [][]byte // TODO: use a ring buffer
+	queue        datagramReceiveQueue
 
 	mx      sync.Mutex
 	sendErr error
@@ -138,19 +136,16 @@ func (s *stateTrackingStream) enqueueDatagram(data []byte) {
 	if s.recvErr != nil {
 		return
 	}
-	if len(s.queue) >= streamDatagramQueueLen {
+	if !s.queue.push(data) {
 		return
 	}
-	s.queue = append(s.queue, data)
 	s.signalHasDatagram()
 }
 
 func (s *stateTrackingStream) ReceiveDatagram(ctx context.Context) ([]byte, error) {
 start:
 	s.mx.Lock()
-	if len(s.queue) > 0 {
-		data := s.queue[0]
-		s.queue = s.queue[1:]
+	if data, ok := s.queue.pop(); ok {
 		s.mx.Unlock()
 		return data, nil
 	}
