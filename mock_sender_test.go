@@ -189,6 +189,42 @@ func (c *MockSenderSendCall) DoAndReturn(f func(*packetBuffer, uint16, protocol.
 	return c
 }
 
+// SendMTUProbe mocks base method.
+func (m *MockSender) SendMTUProbe(arg0 *packetBuffer, arg1 protocol.ECN) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SendMTUProbe", arg0, arg1)
+}
+
+// SendMTUProbe indicates an expected call of SendMTUProbe.
+func (mr *MockSenderMockRecorder) SendMTUProbe(arg0, arg1 any) *MockSenderSendMTUProbeCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendMTUProbe", reflect.TypeOf((*MockSender)(nil).SendMTUProbe), arg0, arg1)
+	return &MockSenderSendMTUProbeCall{Call: call}
+}
+
+// MockSenderSendMTUProbeCall wrap *gomock.Call
+type MockSenderSendMTUProbeCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockSenderSendMTUProbeCall) Return() *MockSenderSendMTUProbeCall {
+	c.Call = c.Call.Return()
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockSenderSendMTUProbeCall) Do(f func(*packetBuffer, protocol.ECN)) *MockSenderSendMTUProbeCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockSenderSendMTUProbeCall) DoAndReturn(f func(*packetBuffer, protocol.ECN)) *MockSenderSendMTUProbeCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // SendProbe mocks base method.
 func (m *MockSender) SendProbe(arg0 *packetBuffer, arg1 net.Addr, arg2 packetInfo) {
 	m.ctrl.T.Helper()

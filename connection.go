@@ -2555,7 +2555,7 @@ func (c *Conn) sendPackets(now monotime.Time) error {
 		ecn := c.sentPacketHandler.ECNMode(true)
 		c.logShortHeaderPacket(p, ecn, buf.Len())
 		c.registerPackedShortHeaderPacket(p, ecn, now)
-		c.sendQueue.Send(buf, 0, ecn)
+		c.sendQueue.SendMTUProbe(buf, ecn)
 		// There's (likely) more data to send. Loop around again.
 		c.scheduleSending()
 		return nil

@@ -2,13 +2,16 @@ package quic
 
 import (
 	"errors"
+	"fmt"
 	"net"
+	"sync"
 
 	"github.com/apernet/quic-go/internal/protocol"
 )
 
 type sender interface {
 	Send(p *packetBuffer, gsoSize uint16, ecn protocol.ECN)
+	SendMTUProbe(*packetBuffer, protocol.ECN)
 	SendProbe(*packetBuffer, net.Addr, packetInfo)
 	Run() error
 	WouldBlock() bool
@@ -17,9 +20,10 @@ type sender interface {
 }
 
 type queueEntry struct {
-	buf     *packetBuffer
-	gsoSize uint16
-	ecn     protocol.ECN
+	buf      *packetBuffer
+	gsoSize  uint16
+	ecn      protocol.ECN
+	mtuProbe bool
 }
 
 type sendQueue struct {
@@ -28,6 +32,7 @@ type sendQueue struct {
 	runStopped  chan struct{} // runStopped when the run loop returns
 	available   chan struct{}
 	conn        sendConn
+	sendMu      sync.Mutex // orders packet ownership against shutdown
 }
 
 var _ sender = &sendQueue{}
@@ -48,8 +53,26 @@ func newSendQueue(conn sendConn) sender {
 // Callers need to make sure that there's actually space in the send queue by calling WouldBlock.
 // Otherwise Send will panic.
 func (h *sendQueue) Send(p *packetBuffer, gsoSize uint16, ecn protocol.ECN) {
+	h.enqueue(queueEntry{buf: p, gsoSize: gsoSize, ecn: ecn})
+}
+
+// SendMTUProbe sends a deliberately oversized discovery packet. A size error
+// for this packet is expected evidence for the discoverer, not a data failure.
+func (h *sendQueue) SendMTUProbe(p *packetBuffer, ecn protocol.ECN) {
+	h.enqueue(queueEntry{buf: p, ecn: ecn, mtuProbe: true})
+}
+
+func (h *sendQueue) enqueue(entry queueEntry) {
+	h.sendMu.Lock()
+	defer h.sendMu.Unlock()
 	select {
-	case h.queue <- queueEntry{buf: p, gsoSize: gsoSize, ecn: ecn}:
+	case <-h.runStopped:
+		entry.buf.Release()
+		return
+	default:
+	}
+	select {
+	case h.queue <- entry:
 		// clear available channel if we've reached capacity
 		if len(h.queue) == sendQueueCapacity {
 			select {
@@ -57,7 +80,6 @@ func (h *sendQueue) Send(p *packetBuffer, gsoSize uint16, ecn protocol.ECN) {
 			default:
 			}
 		}
-	case <-h.runStopped:
 	default:
 		panic("sendQueue.Send would have blocked")
 	}
@@ -76,7 +98,7 @@ func (h *sendQueue) Available() <-chan struct{} {
 }
 
 func (h *sendQueue) Run() error {
-	defer close(h.runStopped)
+	defer h.stop()
 	var shouldClose bool
 	for {
 		if shouldClose && len(h.queue) == 0 {
@@ -88,21 +110,40 @@ func (h *sendQueue) Run() error {
 			// make sure that all queued packets are actually sent out
 			shouldClose = true
 		case e := <-h.queue:
-			if err := h.conn.Write(e.buf.Data, e.gsoSize, e.ecn); err != nil {
-				// This additional check enables:
-				// 1. Checking for "datagram too large" message from the kernel, as such,
-				// 2. Path MTU discovery,and
-				// 3. Eventual detection of loss PingFrame.
-				var tooLarge *DatagramTooLargeError
-				if !isSendMsgSizeErr(err) && !errors.As(err, &tooLarge) {
-					return err
-				}
+			if err := h.write(e); err != nil {
+				return err
 			}
-			e.buf.Release()
 			select {
 			case h.available <- struct{}{}:
 			default:
 			}
+		}
+	}
+}
+
+func (h *sendQueue) write(entry queueEntry) error {
+	defer entry.buf.Release()
+	err := h.conn.Write(entry.buf.Data, entry.gsoSize, entry.ecn)
+	var tooLarge *DatagramTooLargeError
+	if err == nil || !isSendMsgSizeErr(err) && !errors.As(err, &tooLarge) {
+		return err
+	}
+	if entry.mtuProbe {
+		return nil
+	}
+	return fmt.Errorf("cannot send non-probe QUIC packet (%d bytes): %w", entry.buf.Len(), err)
+}
+
+func (h *sendQueue) stop() {
+	h.sendMu.Lock()
+	defer h.sendMu.Unlock()
+	close(h.runStopped)
+	for {
+		select {
+		case entry := <-h.queue:
+			entry.buf.Release()
+		default:
+			return
 		}
 	}
 }
