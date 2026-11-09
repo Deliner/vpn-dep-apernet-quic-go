@@ -14,7 +14,7 @@ import (
 
 func TestDatagramQueuePeekAndPop(t *testing.T) {
 	var queued []struct{}
-	queue := newDatagramQueue(func() { queued = append(queued, struct{}{}) }, utils.DefaultLogger)
+	queue := newDatagramQueue(func() { queued = append(queued, struct{}{}) }, utils.DefaultLogger, nil)
 	require.Nil(t, queue.Peek())
 	require.Empty(t, queued)
 	require.NoError(t, queue.Add(&wire.DatagramFrame{Data: []byte("foo")}))
@@ -28,7 +28,7 @@ func TestDatagramQueuePeekAndPop(t *testing.T) {
 
 func TestDatagramQueueSendQueueLength(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		queue := newDatagramQueue(func() {}, utils.DefaultLogger)
+		queue := newDatagramQueue(func() {}, utils.DefaultLogger, nil)
 
 		for range maxDatagramSendQueueLen {
 			require.NoError(t, queue.Add(&wire.DatagramFrame{Data: []byte{0}}))
@@ -73,7 +73,7 @@ func TestDatagramQueueSendQueueLength(t *testing.T) {
 }
 
 func TestDatagramQueueReceive(t *testing.T) {
-	queue := newDatagramQueue(func() {}, utils.DefaultLogger)
+	queue := newDatagramQueue(func() {}, utils.DefaultLogger, nil)
 
 	// receive frames that were received earlier
 	queue.HandleDatagramFrame(&wire.DatagramFrame{Data: []byte("foo")})
@@ -88,7 +88,7 @@ func TestDatagramQueueReceive(t *testing.T) {
 
 func TestDatagramQueueReceiveBlocking(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		queue := newDatagramQueue(func() {}, utils.DefaultLogger)
+		queue := newDatagramQueue(func() {}, utils.DefaultLogger, nil)
 
 		// block until a new frame is received
 		type result struct {
@@ -147,7 +147,7 @@ func TestDatagramQueueReceiveBlocking(t *testing.T) {
 
 func TestDatagramQueueClose(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		queue := newDatagramQueue(func() {}, utils.DefaultLogger)
+		queue := newDatagramQueue(func() {}, utils.DefaultLogger, nil)
 
 		for range maxDatagramSendQueueLen {
 			require.NoError(t, queue.Add(&wire.DatagramFrame{Data: []byte{0}}))

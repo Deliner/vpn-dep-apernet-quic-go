@@ -11,7 +11,6 @@ import (
 
 const (
 	maxDatagramSendQueueLen = 32
-	maxDatagramRcvQueueLen  = 128
 )
 
 type datagramQueue struct {
@@ -19,9 +18,12 @@ type datagramQueue struct {
 	sendQueue ringbuffer.RingBuffer[*wire.DatagramFrame]
 	sent      chan struct{} // used to notify Add that a datagram was dequeued
 
-	rcvMx    sync.Mutex
-	rcvQueue [][]byte
-	rcvd     chan struct{} // used to notify Receive that a new datagram was received
+	rcvMx         sync.Mutex
+	rcvQueue      ringbuffer.RingBuffer[[]byte]
+	rcvBytes      int
+	rcvMaxPackets int
+	rcvMaxBytes   int
+	rcvd          chan struct{} // used to notify Receive that a new datagram was received
 
 	closeErr error
 	closed   chan struct{}
@@ -31,13 +33,20 @@ type datagramQueue struct {
 	logger utils.Logger
 }
 
-func newDatagramQueue(hasData func(), logger utils.Logger) *datagramQueue {
+func newDatagramQueue(hasData func(), logger utils.Logger, config *Config) *datagramQueue {
+	var budget datagramReceiveBudget
+	if config != nil {
+		budget = config.datagramReceiveBudget
+	}
+	packets, bytes := budget.limits()
 	return &datagramQueue{
-		hasData: hasData,
-		rcvd:    make(chan struct{}, 1),
-		sent:    make(chan struct{}, 1),
-		closed:  make(chan struct{}),
-		logger:  logger,
+		rcvMaxPackets: packets,
+		rcvMaxBytes:   bytes,
+		hasData:       hasData,
+		rcvd:          make(chan struct{}, 1),
+		sent:          make(chan struct{}, 1),
+		closed:        make(chan struct{}),
+		logger:        logger,
 	}
 }
 
@@ -91,12 +100,13 @@ func (h *datagramQueue) Pop() {
 
 // HandleDatagramFrame handles a received DATAGRAM frame.
 func (h *datagramQueue) HandleDatagramFrame(f *wire.DatagramFrame) {
-	data := make([]byte, len(f.Data))
-	copy(data, f.Data)
 	var queued bool
 	h.rcvMx.Lock()
-	if len(h.rcvQueue) < maxDatagramRcvQueueLen {
-		h.rcvQueue = append(h.rcvQueue, data)
+	if h.rcvQueue.Len() < h.rcvMaxPackets && len(f.Data) <= h.rcvMaxBytes-h.rcvBytes {
+		data := make([]byte, len(f.Data))
+		copy(data, f.Data)
+		h.rcvQueue.PushBack(data)
+		h.rcvBytes += len(data)
 		queued = true
 		select {
 		case h.rcvd <- struct{}{}:
@@ -113,9 +123,9 @@ func (h *datagramQueue) HandleDatagramFrame(f *wire.DatagramFrame) {
 func (h *datagramQueue) Receive(ctx context.Context) ([]byte, error) {
 	for {
 		h.rcvMx.Lock()
-		if len(h.rcvQueue) > 0 {
-			data := h.rcvQueue[0]
-			h.rcvQueue = h.rcvQueue[1:]
+		if !h.rcvQueue.Empty() {
+			data := h.rcvQueue.PopFront()
+			h.rcvBytes -= len(data)
 			h.rcvMx.Unlock()
 			return data, nil
 		}

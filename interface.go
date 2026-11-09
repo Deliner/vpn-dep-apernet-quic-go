@@ -178,6 +178,8 @@ type Config struct {
 	Allow0RTT bool
 	// Enable QUIC datagram support (RFC 9221).
 	EnableDatagrams bool
+	// Configured before dialing / listening by SetDatagramReceiveBuffer.
+	datagramReceiveBudget datagramReceiveBudget
 	// OmitMaxDatagramFrameSize omits the max_datagram_frame_size transport parameter,
 	// even when QUIC datagram support is enabled.
 	OmitMaxDatagramFrameSize bool

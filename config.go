@@ -14,6 +14,25 @@ func (c *Config) Clone() *Config {
 	return &copy
 }
 
+// SetDatagramReceiveBuffer configures each connection created with this Config.
+// Set it before dialing or listening, without concurrent use of the Config.
+// Limits are 1..4096 packets and 1..16 MiB of payload; allocation is lazy and
+// excess datagrams are dropped without blocking QUIC. Zero-value Config keeps
+// the legacy 128-packet policy. This is independent of HTTP/3 stream budgets
+// and kernel buffers, and doesn't make unreliable datagrams reliable.
+// Invalid limits leave the Config unchanged.
+func (c *Config) SetDatagramReceiveBuffer(packets, bytes int) error {
+	if c == nil {
+		return fmt.Errorf("quic: nil Config for datagram receive budget")
+	}
+	budget, err := newDatagramReceiveBudget(packets, bytes)
+	if err != nil {
+		return err
+	}
+	c.datagramReceiveBudget = budget
+	return nil
+}
+
 func (c *Config) handshakeTimeout() time.Duration {
 	return 2 * c.HandshakeIdleTimeout
 }
@@ -139,6 +158,7 @@ func populateConfig(config *Config) *Config {
 		MaxIncomingUniStreams:            maxIncomingUniStreams,
 		TokenStore:                       config.TokenStore,
 		EnableDatagrams:                  enableDatagrams,
+		datagramReceiveBudget:            config.datagramReceiveBudget,
 		OmitMaxDatagramFrameSize:         omitMaxDatagramFrameSize,
 		AssumePeerMaxDatagramFrameSize:   config.AssumePeerMaxDatagramFrameSize,
 		InitialPacketSize:                initialPacketSize,

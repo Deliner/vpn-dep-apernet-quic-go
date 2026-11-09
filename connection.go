@@ -571,7 +571,7 @@ func (c *Conn) preSetup() {
 
 	c.receivedPacketHandler = *ackhandler.NewReceivedPacketHandler(c.logger)
 
-	c.datagramQueue = newDatagramQueue(c.scheduleSending, c.logger)
+	c.datagramQueue = newDatagramQueue(c.scheduleSending, c.logger, c.config)
 	c.connState.Version = c.version
 }
 
