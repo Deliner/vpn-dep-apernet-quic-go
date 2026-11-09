@@ -33,15 +33,17 @@ type sendQueue struct {
 	available   chan struct{}
 	conn        sendConn
 	sendMu      sync.Mutex // orders packet ownership against shutdown
+	mtuErrors   chan<- protocol.ByteCount
 }
 
 var _ sender = &sendQueue{}
 
 const sendQueueCapacity = 8
 
-func newSendQueue(conn sendConn) sender {
+func newSendQueue(conn sendConn, mtuErrors chan<- protocol.ByteCount) sender {
 	return &sendQueue{
 		conn:        conn,
+		mtuErrors:   mtuErrors,
 		runStopped:  make(chan struct{}),
 		closeCalled: make(chan struct{}),
 		available:   make(chan struct{}, 1),
@@ -131,7 +133,27 @@ func (h *sendQueue) write(entry queueEntry) error {
 	if entry.mtuProbe {
 		return nil
 	}
+	if h.reportMTUError(entry) {
+		return nil
+	}
 	return fmt.Errorf("cannot send non-probe QUIC packet (%d bytes): %w", entry.buf.Len(), err)
+}
+
+func (h *sendQueue) reportMTUError(entry queueEntry) bool {
+	size := entry.buf.Len()
+	if entry.gsoSize != 0 {
+		size = min(size, protocol.ByteCount(entry.gsoSize))
+	}
+	// A path that cannot carry QUIC's minimum size cannot be recovered by
+	// reducing packet size. Preserve the error when no recovery owner exists.
+	if size <= protocol.MinInitialPacketSize || h.mtuErrors == nil {
+		return false
+	}
+	select {
+	case h.mtuErrors <- size:
+	default: // One pending notification suffices to fall back to the base size.
+	}
+	return true
 }
 
 func (h *sendQueue) stop() {

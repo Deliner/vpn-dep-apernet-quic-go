@@ -318,8 +318,8 @@ func (c *cubicSender) maybeQlogStateChange(new qlog.CongestionState) {
 }
 
 func (c *cubicSender) SetMaxDatagramSize(s protocol.ByteCount) {
-	if s < c.maxDatagramSize {
-		panic(fmt.Sprintf("congestion BUG: decreased max datagram size from %d to %d", c.maxDatagramSize, s))
+	if s <= 0 {
+		panic(fmt.Sprintf("congestion BUG: invalid max datagram size %d", s))
 	}
 	cwndIsMinCwnd := c.congestionWindow == c.minCongestionWindow()
 	c.maxDatagramSize = s

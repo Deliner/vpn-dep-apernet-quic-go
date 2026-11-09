@@ -25,7 +25,7 @@ func TestSendQueueSendOnePacket(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		c := NewMockSendConn(mockCtrl)
-		q := newSendQueue(c)
+		q := newSendQueue(c, nil)
 
 		written := make(chan struct{})
 		c.EXPECT().Write([]byte("foobar"), uint16(10), protocol.ECT1).Do(
@@ -62,7 +62,7 @@ func TestSendQueueBlocking(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		c := NewMockSendConn(mockCtrl)
-		q := newSendQueue(c)
+		q := newSendQueue(c, nil)
 
 		blockWrite := make(chan struct{})
 		written := make(chan struct{}, 1)
@@ -155,7 +155,7 @@ func TestSendQueueWriteError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		c := NewMockSendConn(mockCtrl)
-		q := newSendQueue(c)
+		q := newSendQueue(c, nil)
 
 		c.EXPECT().Write(gomock.Any(), gomock.Any(), gomock.Any()).Return(assert.AnError)
 		q.Send(getPacketWithContents([]byte("foobar")), 6, protocol.ECNNon)
@@ -194,7 +194,7 @@ func TestSendQueueWriteError(t *testing.T) {
 func TestSendQueueSendProbe(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	c := NewMockSendConn(mockCtrl)
-	q := newSendQueue(c)
+	q := newSendQueue(c, nil)
 
 	addr := &net.UDPAddr{IP: net.IPv4(42, 42, 42, 42), Port: 42}
 	localAddr := netip.MustParseAddr("43.43.43.43")

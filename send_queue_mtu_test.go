@@ -29,7 +29,7 @@ func TestNHOPSendQueueDataSizeFailures(t *testing.T) {
 func dataSizeFailure(t *testing.T, failure error) {
 	t.Helper()
 	conn := NewMockSendConn(gomock.NewController(t))
-	queue := newSendQueue(conn)
+	queue := newSendQueue(conn, nil)
 	defer queue.Close()
 	packet := getPacketWithContents(make([]byte, 1300))
 	conn.EXPECT().Write(packet.Data, uint16(0), protocol.ECNNon).Return(failure)
@@ -58,7 +58,7 @@ func TestNHOPSendQueueMTUProbeSizeFailuresRemainNonfatal(t *testing.T) {
 func mtuProbeFailure(t *testing.T, failure error) {
 	t.Helper()
 	conn := NewMockSendConn(gomock.NewController(t))
-	queue := newSendQueue(conn)
+	queue := newSendQueue(conn, nil)
 	probe := getPacketWithContents(make([]byte, 1400))
 	data := getPacketWithContents([]byte("small data"))
 	gomock.InOrder(
@@ -84,7 +84,7 @@ func mtuProbeFailure(t *testing.T, failure error) {
 
 func TestNHOPSendQueueFatalErrorReleasesOwnedBuffers(t *testing.T) {
 	conn := NewMockSendConn(gomock.NewController(t))
-	queue := newSendQueue(conn)
+	queue := newSendQueue(conn, nil)
 	defer queue.Close()
 	packets := make([]*packetBuffer, sendQueueCapacity)
 	for index := range packets {
@@ -103,7 +103,7 @@ func TestNHOPSendQueueFatalErrorReleasesOwnedBuffers(t *testing.T) {
 
 func TestNHOPSendQueueProbeOrdinaryErrorStillStopsSender(t *testing.T) {
 	conn := NewMockSendConn(gomock.NewController(t))
-	queue := newSendQueue(conn)
+	queue := newSendQueue(conn, nil)
 	defer queue.Close()
 	packet := getPacketWithContents([]byte("probe"))
 	conn.EXPECT().Write(packet.Data, uint16(0), protocol.ECNNon).Return(assert.AnError)
@@ -121,7 +121,7 @@ func TestNHOPSendQueueShutdownRacesWithPacketAdmission(t *testing.T) {
 func shutdownAdmission(t *testing.T) {
 	t.Helper()
 	conn := NewMockSendConn(gomock.NewController(t))
-	queue := newSendQueue(conn)
+	queue := newSendQueue(conn, nil)
 	defer queue.Close()
 	failed := getPacketWithContents([]byte("failed"))
 	queued := getPacketWithContents([]byte("queued"))

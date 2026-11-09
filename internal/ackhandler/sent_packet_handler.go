@@ -124,6 +124,7 @@ type sentPacketHandler struct {
 	// maxDatagramSize converts the congestion window into a packet count, which
 	// is what the packet number length depends on when shortPacketNumbers is set.
 	maxDatagramSize protocol.ByteCount
+	mtuLoss         mtuLossState
 	// lastDatagramPadding is the room left in the datagram that was packed last,
 	// which is what the imitated client measures the window against instead.
 	lastDatagramPadding protocol.ByteCount
@@ -162,6 +163,7 @@ func NewSentPacketHandler(
 	h := &sentPacketHandler{
 		shortPacketNumbers:             shortPacketNumbers,
 		maxDatagramSize:                initialMaxDatagramSize,
+		mtuLoss:                        newMTULossState(0),
 		peerCompletedAddressValidation: pers == protocol.PerspectiveServer,
 		peerAddressValidated:           pers == protocol.PerspectiveClient || clientAddressValidated,
 		initialPackets:                 newPacketNumberSpace(initialPN, false),
@@ -459,6 +461,7 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 
 	pnSpace.largestAcked = max(pnSpace.largestAcked, largestAcked)
 
+	h.observeMTUAcks(ackedPackets)
 	h.detectLostPackets(rcvTime, encLevel)
 	h.ackedPacketsInfo = h.ackedPacketsInfo[:0]
 	if encLevel == protocol.Encryption1RTT {
@@ -888,6 +891,9 @@ func (h *sentPacketHandler) detectLostPackets(now monotime.Time, encLevel protoc
 			pnSpace.lossTime = lossTime
 		}
 		if packetLost {
+			if ordinaryMTUData(p) {
+				h.mtuLoss.lost(pn, p.Length)
+			}
 			if encLevel == protocol.Encryption0RTT || encLevel == protocol.Encryption1RTT {
 				h.lostPackets.Add(pn, p.SendTime)
 			}
@@ -1102,6 +1108,9 @@ func (h *sentPacketHandler) TimeUntilSend() monotime.Time {
 }
 
 func (h *sentPacketHandler) SetMaxDatagramSize(s protocol.ByteCount) {
+	if s != h.maxDatagramSize {
+		h.mtuLoss = newMTULossState(h.appDataPackets.largestSent + 1)
+	}
 	h.maxDatagramSize = s
 	h.getCongestionControl().SetMaxDatagramSize(s)
 }
@@ -1197,6 +1206,8 @@ func (h *sentPacketHandler) ResetForRetry(now monotime.Time) {
 }
 
 func (h *sentPacketHandler) MigratedPath(now monotime.Time, initialMaxDatagramSize protocol.ByteCount) {
+	h.maxDatagramSize = initialMaxDatagramSize
+	h.mtuLoss = newMTULossState(h.appDataPackets.largestSent + 1)
 	h.rttStats.ResetForPathMigration()
 	for pn, p := range h.appDataPackets.history.Packets() {
 		h.appDataPackets.history.DeclareLost(pn)

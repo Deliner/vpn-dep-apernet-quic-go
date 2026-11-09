@@ -156,6 +156,44 @@ func (c *MockSentPacketHandlerGetLossDetectionTimeoutCall) DoAndReturn(f func() 
 	return c
 }
 
+// MTUBlackholeSize mocks base method.
+func (m *MockSentPacketHandler) MTUBlackholeSize() protocol.ByteCount {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MTUBlackholeSize")
+	ret0, _ := ret[0].(protocol.ByteCount)
+	return ret0
+}
+
+// MTUBlackholeSize indicates an expected call of MTUBlackholeSize.
+func (mr *MockSentPacketHandlerMockRecorder) MTUBlackholeSize() *MockSentPacketHandlerMTUBlackholeSizeCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MTUBlackholeSize", reflect.TypeOf((*MockSentPacketHandler)(nil).MTUBlackholeSize))
+	return &MockSentPacketHandlerMTUBlackholeSizeCall{Call: call}
+}
+
+// MockSentPacketHandlerMTUBlackholeSizeCall wrap *gomock.Call
+type MockSentPacketHandlerMTUBlackholeSizeCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockSentPacketHandlerMTUBlackholeSizeCall) Return(arg0 protocol.ByteCount) *MockSentPacketHandlerMTUBlackholeSizeCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockSentPacketHandlerMTUBlackholeSizeCall) Do(f func() protocol.ByteCount) *MockSentPacketHandlerMTUBlackholeSizeCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockSentPacketHandlerMTUBlackholeSizeCall) DoAndReturn(f func() protocol.ByteCount) *MockSentPacketHandlerMTUBlackholeSizeCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // MigratedPath mocks base method.
 func (m *MockSentPacketHandler) MigratedPath(now monotime.Time, initialMaxPacketSize protocol.ByteCount) {
 	m.ctrl.T.Helper()

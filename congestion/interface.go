@@ -43,6 +43,8 @@ type CongestionControl interface {
 	OnPacketAcked(number PacketNumber, ackedBytes ByteCount, priorInFlight ByteCount, eventTime monotime.Time)
 	OnCongestionEvent(number PacketNumber, lostBytes ByteCount, priorInFlight ByteCount)
 	OnRetransmissionTimeout(packetsRetransmitted bool)
+	// SetMaxDatagramSize updates packetization size after path validation or
+	// PMTU adaptation. The value may decrease as well as increase.
 	SetMaxDatagramSize(size ByteCount)
 	InSlowStart() bool
 	InRecovery() bool

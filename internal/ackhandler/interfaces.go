@@ -25,6 +25,9 @@ type SentPacketHandler interface {
 	// It is used for pacing packets.
 	TimeUntilSend() monotime.Time
 	SetMaxDatagramSize(count protocol.ByteCount)
+	// MTUBlackholeSize reports repeated data loss or PTOs at the current size.
+	// The connection owns the decision to reduce packet size and restart probing.
+	MTUBlackholeSize() protocol.ByteCount
 	// SetLastDatagramPadding reports how much room was left in the datagram that
 	// was just packed. It only matters when packet numbers are shortened.
 	SetLastDatagramPadding(protocol.ByteCount)

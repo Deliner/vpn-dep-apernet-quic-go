@@ -47,6 +47,9 @@ func connectionOptTracer(r qlogwriter.Recorder) testConnectionOpt {
 }
 
 func connectionOptSentPacketHandler(sph ackhandler.SentPacketHandler) testConnectionOpt {
+	if mock, ok := sph.(*mockackhandler.MockSentPacketHandler); ok {
+		mock.EXPECT().MTUBlackholeSize().Return(protocol.ByteCount(0)).AnyTimes()
+	}
 	return func(conn *Conn) { conn.sentPacketHandler = sph }
 }
 

@@ -136,8 +136,9 @@ type Conn struct {
 	version     protocol.Version
 	config      *Config
 
-	conn      sendConn
-	sendQueue sender
+	conn          sendConn
+	sendQueue     sender
+	sendMTUErrors chan protocol.ByteCount
 
 	// lazily initialzed: most connections never migrate
 	pathManager         *pathManager
@@ -160,10 +161,11 @@ type Conn struct {
 	tokenStoreKey         string                    // only set for the client
 	tokenGenerator        *handshake.TokenGenerator // only set for the server
 
-	unpacker      unpacker
-	frameParser   wire.FrameParser
-	packer        packer
-	mtuDiscoverer mtuDiscoverer // initialized when the transport parameters are received
+	unpacker          unpacker
+	frameParser       wire.FrameParser
+	packer            packer
+	mtuDiscoverer     mtuDiscoverer      // initialized when the transport parameters are received
+	initialPacketSize protocol.ByteCount // private to this connection, including pre-handshake fallback
 
 	maxPayloadSizeEstimate atomic.Uint32
 
@@ -528,7 +530,8 @@ func (c *Conn) preSetup() {
 	c.largestRcvdAppData = protocol.InvalidPacketNumber
 	c.initialStream = newInitialCryptoStream(c.perspective == protocol.PerspectiveClient, c.config.ChromeParrot)
 	c.handshakeStream = newCryptoStream()
-	c.sendQueue = newSendQueue(c.conn)
+	c.initialPacketSize = protocol.ByteCount(c.config.InitialPacketSize)
+	c.initializeSendQueue()
 	c.retransmissionQueue = newRetransmissionQueue()
 	c.frameParser = *wire.NewFrameParser(
 		c.config.EnableDatagrams,
@@ -674,6 +677,8 @@ runLoop:
 				break runLoop
 			case <-c.timer.C:
 			case <-c.sendingScheduled:
+			case size := <-c.sendMTUErrors:
+				c.reducePathMTU(monotime.Now(), size)
 			case <-sendQueueAvailable:
 			case <-c.notifyReceivedPacket:
 				wasProcessed, err := c.handlePackets()
@@ -697,6 +702,8 @@ runLoop:
 				break runLoop
 			}
 		}
+
+		c.handleMTUChanges(now)
 
 		if keepAliveTime := c.nextKeepAliveTime(); !keepAliveTime.IsZero() && !now.Before(keepAliveTime) {
 			// send a PING frame since there is no activity in the connection
@@ -944,9 +951,10 @@ func (c *Conn) switchToNewPath(tr *Transport, now monotime.Time) {
 		maxPacketSize = c.peerParams.MaxUDPPayloadSize
 	}
 	c.mtuDiscoverer.Reset(now, initialPacketSize, maxPacketSize)
+	c.maxPayloadSizeEstimate.Store(uint32(estimateMaxPayloadSize(initialPacketSize)))
 	c.conn = newSendConn(tr.conn, c.conn.RemoteAddr(), packetInfo{}, utils.DefaultLogger) // TODO: find a better way
 	c.sendQueue.Close()
-	c.sendQueue = newSendQueue(c.conn)
+	c.initializeSendQueue()
 	go func() {
 		if err := c.sendQueue.Run(); err != nil {
 			c.destroyImpl(err)
@@ -1333,6 +1341,7 @@ func (c *Conn) handleShortHeaderPacket(
 		protocol.ByteCount(c.config.InitialPacketSize),
 		maxPacketSize,
 	)
+	c.maxPayloadSizeEstimate.Store(uint32(estimateMaxPayloadSize(protocol.ByteCount(c.config.InitialPacketSize))))
 	c.conn.ChangeRemoteAddr(p.remoteAddr, p.info)
 	return true, nil
 }
@@ -2166,7 +2175,7 @@ func (c *Conn) handleAckFrame(frame *wire.AckFrame, encLevel protocol.Encryption
 	if c.mtuDiscoverer != nil {
 		mtu := c.mtuDiscoverer.CurrentSize()
 		maxPayloadSize := estimateMaxPayloadSize(mtu)
-		if maxPayloadSize > protocol.ByteCount(c.maxPayloadSizeEstimate.Load()) {
+		if maxPayloadSize != protocol.ByteCount(c.maxPayloadSizeEstimate.Load()) {
 			c.maxPayloadSizeEstimate.Store(uint32(maxPayloadSize))
 			c.sentPacketHandler.SetMaxDatagramSize(mtu)
 		}
@@ -2476,7 +2485,7 @@ func (c *Conn) applyTransportParameters() {
 	}
 	c.mtuDiscoverer = newMTUDiscoverer(
 		c.rttStats,
-		protocol.ByteCount(c.config.InitialPacketSize),
+		c.initialPacketSize,
 		maxPacketSize,
 		c.qlogger,
 	)
@@ -2906,7 +2915,7 @@ func (c *Conn) maxPacketSize() protocol.ByteCount {
 		// If the server sends a max_udp_payload_size that's smaller than this size, we can ignore this:
 		// Apparently the server still processed the (fully padded) Initial packet anyway.
 		if c.perspective == protocol.PerspectiveClient {
-			return protocol.ByteCount(c.config.InitialPacketSize)
+			return c.initialPacketSize
 		}
 		// On the server side, there's no downside to using 1200 bytes until we received the client's transport
 		// parameters:
